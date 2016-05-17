@@ -6,22 +6,51 @@ public enum Method: String {
     case OPTIONS, GET, HEAD, POST, PUT, PATCH, DELETE, TRACE, CONNECT
 }
 
+public struct QueryItem {
+
+    private let name: String
+    private let value: String
+    
+    private let unreservedCharacters = NSCharacterSet.init(charactersIn:
+        "abcdefghijklmnopqrstuvwxyz" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "1234567890-._~")
+    
+    public var encoded: String {
+        let name = self.name.addingPercentEncoding(withAllowedCharacters: unreservedCharacters)!
+        let value = self.value.addingPercentEncoding(withAllowedCharacters: unreservedCharacters)!
+        return "\(name)=\(value)"
+    }
+    
+    public init(name: String, value: String) {
+        self.name = name
+        self.value = value
+    }
+}
+
 public class RestRequest {
 
     private let method: Method
     private let url: String
     private let acceptType: String?
     private let contentType: String?
-    private let queryParameters: [NSURLQueryItem]?
+    private let queryParameters: [QueryItem]?
     private let headerParameters: [String: String]?
     private let messageBody: NSData?
     private let username: String?
     private let password: String?
+    
     private let domain = "com.ibm.swift.rest-kit"
+    private let unreservedCharacters = NSCharacterSet.init(charactersIn:
+        "abcdefghijklmnopqrstuvwxyz" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "1234567890-._~")
 
     public func response(callback: ClientRequestCallback) {
     
         // construct url with query parameters
+        var url = self.url
+        if let queryParameters = queryParameters {
+            let pairs = queryParameters.map { item in item.encoded }
+            "&".
+            url += "?" + "&".join(pairs)
+        }
         let urlComponents = NSURLComponents(string: self.url)!
         if let queryParameters = queryParameters where !queryParameters.isEmpty {
             urlComponents.queryItems = queryParameters
@@ -67,8 +96,10 @@ public class RestRequest {
         options.append(.Headers(headers))
         options.append(.Schema(scheme + "://"))
         options.append(.Hostname(hostname))
-        if let query = urlComponents.percentEncodedQuery {
-            options.append(.Path(path + "?" + query))
+        if let query = urlComponents.query {
+            let escapedQuery = query.addingPercentEncoding(withAllowedCharacters: unreservedCharacters)!
+            print(path + "?" + escapedQuery)
+            options.append(.Path(path + "?" + escapedQuery))
         } else {
             options.append(.Path(path))
         }
@@ -83,7 +114,7 @@ public class RestRequest {
         Http.request(options, callback: callback).end()
     }
 
-    public func responseJSON(callback: Result<JSON, NSError> -> Void) {
+    public func responseJSON(callback: RestResult<JSON, NSError> -> Void) {
 
         self.response { r in
             guard let response = r where response.statusCode == HttpStatusCode.OK else {
